@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f5f8a">
+<title>🎬 全自动模拟演示 · demo0919</title>
+<!--
+  demo0919.html — ui0919 的全自动演示版
+  加载即开始，按 7 阶段顺序自动推进，无需任何用户输入
+  完成后停在「完成」阶段，渲染 Canvas 合成的成品预览
+-->
+<style>
+:root{
+  --brand:#3f7fae; --brand-d:#2f5f8a; --brand-l:#eaf2f8;
+  --ok:#2e8b57; --ok-l:#e8f5ee; --warn:#c77700; --warn-l:#fdf3e3;
+  --cut:#c0392b; --cut-l:#fdeeec;
+  --line:#dfe6ec; --muted:#6b7a89; --ink:#22303c; --bg:#f4f7fa;
+  --radius:14px; --shadow:0 6px 20px rgba(47,95,138,.10);
+}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.65 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg)}
+.wrap{max-width:960px;margin:0 auto;padding:18px 16px 80px}
+.hero{background:linear-gradient(120deg,#3f7fae,#2f5f8a);color:#fff;border-radius:var(--radius);padding:22px 26px;box-shadow:0 8px 24px rgba(47,95,138,.25);position:relative;overflow:hidden}
+.hero h1{margin:0;font-size:22px}
+.hero p{margin:8px 0 0;font-size:13.5px;opacity:.95}
+.hero .replay{position:absolute;top:18px;right:18px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;padding:7px 14px;border-radius:20px;font-size:12.5px;cursor:pointer;backdrop-filter:blur(4px)}
+.hero .replay:hover{background:rgba(255,255,255,.3)}
+
+.stepper{display:flex;gap:6px;margin:18px 0 12px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+.stepper::-webkit-scrollbar{height:3px}
+.stepper::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px}
+.sp{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;background:#fff;border:1px solid var(--line);font-size:12.5px;color:var(--muted);white-space:nowrap;transition:all .35s}
+.sp .n{width:22px;height:22px;border-radius:50%;background:var(--line);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:600}
+.sp.active{background:var(--brand-l);border-color:var(--brand);color:var(--brand-d)}
+.sp.active .n{background:var(--brand)}
+.sp.done{background:var(--ok-l);border-color:var(--ok);color:var(--ok)}
+.sp.done .n{background:var(--ok)}
+
+.stage{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;min-height:420px}
+.stage h2{margin:0 0 4px;font-size:18px}
+.stage .sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+
+.row{display:grid;grid-template-columns:1.2fr 1fr;gap:18px}
+@media (max-width:780px){.row{grid-template-columns:1fr}}
+.panel{border:1px solid var(--line);border-radius:12px;padding:14px;background:#fbfdff}
+.panel h3{margin:0 0 10px;font-size:14px;color:var(--brand-d)}
+.bbox{background:#0e1726;border-radius:10px;color:#cfe1ff;padding:12px;font:12px/1.7 ui-monospace,Menlo,Consolas,monospace;height:230px;overflow-y:auto;white-space:pre-wrap;word-break:break-word}
+.bbox .t{color:#7eb6ff}.bbox .ok{color:#5fd49a}.bbox .warn{color:#f0b46a}.bbox .err{color:#ff7d6e}
+
+.subs{border:1px solid var(--line);border-radius:10px;padding:6px;background:#fff;max-height:300px;overflow-y:auto}
+.sub{display:grid;grid-template-columns:62px 1fr 26px;gap:8px;padding:7px 10px;border-radius:7px;align-items:center;font-size:13px;border:1px solid transparent}
+.sub .ts{color:var(--muted);font:11.5px ui-monospace,monospace}
+.sub .txt{color:var(--ink)}
+.sub.cut{background:var(--cut-l);border-color:var(--cut);opacity:.7;text-decoration:line-through}
+.sub.cut .txt{color:var(--cut)}
+.sub.kept{background:var(--ok-l);border-color:var(--ok)}
+.sub .badge{font-size:10px;padding:2px 6px;border-radius:5px;background:var(--brand-l);color:var(--brand-d);text-align:center;font-weight:600}
+
+.progress{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:14px 0}
+.progress .bar{height:100%;background:linear-gradient(90deg,var(--brand),var(--ok));width:0%;transition:width .4s}
+
+.video-box{position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:9/16;max-width:280px;margin:0 auto;display:flex;align-items:center;justify-content:center}
+.video-box canvas{width:100%;height:100%;display:block}
+.video-box .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;background:rgba(0,0,0,.55);text-align:center;padding:18px}
+
+.timeline{border:1px solid var(--line);border-radius:10px;padding:10px;background:#fff}
+.tl-row{display:flex;gap:2px;height:34px;border-radius:6px;overflow:hidden;background:#f3f6f9;margin-bottom:6px}
+.tl-row:last-child{margin-bottom:0}
+.tl-row .lbl{font-size:11px;color:var(--muted);width:36px;display:flex;align-items:center}
+.tl-seg{flex:1;background:var(--line);position:relative;min-width:4px}
+.tl-seg.v1{background:#3f7fae}
+.tl-seg.v2{background:#c77700}
+.tl-seg.v3{background:#2e8b57}
+.tl-seg.t{background:rgba(192,57,43,.18);border:1px dashed #c0392b}
+.tl-seg.broll{background:#9b6dc7}
+
+.donedeck{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:18px}
+@media (max-width:600px){.donedeck{grid-template-columns:1fr}}
+.stat{background:linear-gradient(135deg,#fff,#f4f7fa);border:1px solid var(--line);border-radius:12px;padding:16px}
+.stat .k{font-size:12px;color:var(--muted);margin-bottom:6px}
+.stat .v{font-size:22px;font-weight:700;color:var(--brand-d)}
+.stat .v small{font-size:12px;color:var(--muted);font-weight:500;margin-left:4px}
+
+.tag{display:inline-block;padding:3px 9px;border-radius:11px;font-size:11.5px;margin-right:4px}
+.tag.ok{background:var(--ok-l);color:var(--ok)}
+.tag.warn{background:var(--warn-l);color:var(--warn)}
+.tag.cut{background:var(--cut-l);color:var(--cut)}
+.tag.brand{background:var(--brand-l);color:var(--brand-d)}
+
+.cta{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.btn{padding:10px 18px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;font-size:14px}
+.btn.p{background:var(--brand);color:#fff;border-color:var(--brand)}
+.btn:hover{filter:brightness(.95)}
+
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--brand-l);border-top-color:var(--brand);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+.pulse{animation:pulse 1.2s ease-in-out infinite}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="hero">
+  <h1>🎬 全自动剪辑演示</h1>
+  <p>展示从原始影片到成品的完整 7 阶段流程，无需任何操作，约 30 秒跑完</p>
+  <button class="replay" onclick="replay()">↻ 重新播放</button>
+</div>
+
+<div class="stepper" id="stepper">
+  <div class="sp" data-n="1"><span class="n">1</span>上传</div>
+  <div class="sp" data-n="2"><span class="n">2</span>字幕提取</div>
+  <div class="sp" data-n="3"><span class="n">3</span>AI 修剪</div>
+  <div class="sp" data-n="4"><span class="n">4</span>剪辑</div>
+  <div class="sp" data-n="5"><span class="n">5</span>贴图</div>
+  <div class="sp" data-n="6"><span class="n">6</span>插视频</div>
+  <div class="sp" data-n="7"><span class="n">7</span>完成</div>
+</div>
+
+<div class="progress"><div class="bar" id="bar"></div></div>
+
+<div class="stage" id="stage">
+  <h2>准备开始…</h2>
+  <div class="sub">加载演示数据</div>
+</div>
+
+</div>
+
+<script>
+/* ============================================================
+   演示用 mock 数据（来自 media/demo_project.json 风格）
+   ============================================================ */
+const MOCK_VIDEO = {name:'demo_source.mp4', size:'12.4 MB', duration:51.4, w:1080, h:1920};
+const MOCK_SUBS = [
+  {ts:'00:00.0', text:'考試前晚瞓唔着，家長最唔應該講邊句？'},
+  {ts:'00:03.2', text:'張凱棋 精神科專科醫生'},
+  {ts:'00:08.5', text:'嗯，其實呢個問題…'},
+  {ts:'00:10.1', text:'好多家長會即刻講「你瞓啦」'},
+  {ts:'00:13.6', text:'嗯…啊…即係咁講啦'},
+  {ts:'00:16.8', text:'但其實呢句嘢係最冇用嘅'},
+  {ts:'00:20.2', text:'即係話你已經唔想再諗'},
+  {ts:'00:23.5', text:'嗯，所以唔好再加重佢嘅壓力'},
+  {ts:'00:27.1', text:'咁應該點做呢？'},
+  {ts:'00:29.8', text:'可以同佢講「爸爸媽媽知道你擔心」'},
+  {ts:'00:34.2', text:'呢句嘢已經好足夠'},
+  {ts:'00:38.0', text:'唔需要講大道理，唔需要解決方案'},
+  {ts:'00:43.5', text:'只要佢知道你在身邊就夠喇'},
+  {ts:'00:48.2', text:'最後祝你哋小朋友考試順利'}
+];
+/* AI 修剪判定（演示用启发式：含 嗯/啊/即係 且 <2s → cut） */
+const AI_KEEP = MOCK_SUBS.map(s=>{
+  const filler=/嗯|啊|即係|就係|咁講/.test(s.text);
+  const short=(s.text.length<10);
+  return !(filler && short);
+});
+const AI_DECISIONS = MOCK_SUBS.map((s,i)=>({...s, kept:AI_KEEP[i], reason:AI_KEEP[i]?'保留（语义清晰）':'修剪（语气词+短句）'}));
+
+const CUT_PLAN = {
+  /* 模拟 cut 后保留 12 段 */
+  segments:[
+    {in:0.0,  out:8.5,  label:'开场 + 医生介绍'},
+    {in:10.1, out:13.6, label:'好多家長會即刻講…'},
+    {in:16.8, out:23.5, label:'最冇用嘅 + 唔好再加重'},
+    {in:27.1, out:38.0, label:'应该点做'},
+    {in:43.5, out:51.4, label:'总结 + 祝福'}
+  ],
+  totalLen:42.0
+};
+
+const IMAGES_PLAN = [
+  {at:0.0,  img:'m_broll1.jpg', dur:5.0, label:'封面：考试前夜'},
+  {at:18.0, img:'m_cartoon.jpg', dur:4.0, label:'卡通：压力场景'},
+  {at:32.0, img:'m_broll2.jpg', dur:6.0, label:'陪伴场景'}
+];
+
+const CLIPS_PLAN = [
+  {at:6.0,  src:'demo_source.mp4', dur:3.0, label:'B-roll：家中场景'},
+  {at:28.0, src:'demo_source.mp4', dur:2.5, label:'B-roll：医生示意'}
+];
+
+/* ============================================================
+   状态机
+   ============================================================ */
+const STAGES = ['upload','asr','polish','cut','image','clip','done'];
+const STAGE_TITLES = {
+  upload:'① 上传原始影片',
+  asr:'② 字幕提取（ASR）',
+  polish:'③ AI 修剪 + 人工审核',
+  cut:'④ 按文字版剪辑',
+  image:'⑤ 贴图（插图时间点）',
+  clip:'⑥ 插视频（B-roll）',
+  done:'⑦ 成品完成'
+};
+let curStage = 0;
+let progress = 0;
+let demoTimer = null;
+
+const $ = s=>document.querySelector(s);
+const stage = $('#stage');
+const bar = $('#bar');
+const stepper = $('#stepper');
+
+function setProgress(p){
+  progress = Math.max(progress, p);
+  bar.style.width = progress+'%';
+}
+
+function setStepper(n, status){
+  const el = stepper.querySelector(`.sp[data-n="${n}"]`);
+  el.classList.remove('active','done');
+  if(status) el.classList.add(status);
+  /* 标记之前的为 done */
+  stepper.querySelectorAll('.sp').forEach(s=>{
+    const sn = +s.dataset.n;
+    if(sn<n) s.classList.add('done');
+    else if(sn===n) s.classList.add('active');
+  });
+}
+
+function log(box, html){
+  box.innerHTML += html;
+  box.scrollTop = box.scrollHeight;
+}
+
+/* ============================================================
+   各阶段渲染
+   ============================================================ */
+async function runUpload(){
+  setStepper(1,'active');
+  stage.innerHTML = `
+    <h2>${STAGE_TITLES.upload}</h2>
+    <div class="sub">正在上传原始影片…</div>
+    <div class="row">
+      <div class="panel">
+        <h3>文件信息</h3>
+        <div id="upInfo" style="font-size:13.5px"></div>
+      </div>
+      <div class="panel">
+        <h3>上传日志</h3>
+        <div class="bbox" id="upLog"></div>
+      </div>
+    </div>
+  `;
+  const info = $('#upInfo'), logBox = $('#upLog');
+  info.innerHTML = `
+    <div style="margin-bottom:8px"><strong>${MOCK_VIDEO.name}</strong> <span class="tag brand">视频</span></div>
+    <div style="color:var(--muted);font-size:12px">
+      分辨率 ${MOCK_VIDEO.w}×${MOCK_VIDEO.h} · 时长 ${MOCK_VIDEO.duration}s · ${MOCK_VIDEO.size}
+    </div>
+    <div class="progress" style="margin-top:14px"><div class="bar" id="upBar"></div></div>
+    <div id="upStatus" style="margin-top:8px;font-size:12.5px;color:var(--muted)">准备上传…</div>
+  `;
+  const ub = $('#upBar'), us = $('#upStatus');
+  log(logBox,'<span class="t">[init]</span> 打开文件选择器\n');
+  log(logBox,'<span class="t">[read]</span> 读取本地文件元数据\n');
+  await wait(500);
+  log(logBox,'<span class="ok">[ok]</span> 文件识别成功：demo_source.mp4\n');
+  await wait(400);
+  for(let p=0;p<=100;p+=8){
+    ub.style.width = p+'%';
+    us.textContent = `上传中… ${p}%`;
+    if(p%24===0) log(logBox,`<span class="t">[up]</span> ${p}% (${(p*0.124).toFixed(1)} MB / 12.4 MB)\n`);
+    await wait(80);
+  }
+  log(logBox,'<span class="ok">[done]</span> 上传完成，校验通过\n');
+  us.innerHTML = '<span class="tag ok">✓ 已就绪</span>';
+  setProgress(14);
+  await wait(800);
+}
+
+async function runASR(){
+  setStepper(2,'active');
+  stage.innerHTML = `
+    <h2>${STAGE_TITLES.asr}</h2>
+    <div class="sub">运行 ASR 模型提取字幕…</div>
+    <div class="row">
+      <div class="panel">
+        <h3>实时识别</h3>
+        <div class="bbox" id="asrLog"></div>
+      </div>
+      <div class="panel">
+        <h3>字幕预览（共 <span id="subCnt">0</span> 句）</h3>
+        <div class="subs" id="subs"></div>
+      </div>
+    </div>
+  `;
+  const logBox = $('#asrLog'), subs = $('#subs'), cnt = $('#subCnt');
+  log(logBox,'<span class="t">[asr]</span> 模型：paraformer-zh-yue\n');
+  log(logBox,'<span class="t">[asr]</span> 加载音频轨道 25.0 fps\n');
+  await wait(400);
+  log(logBox,'<span class="t">[asr]</span> 开始转写，按句输出\n');
+  await wait(300);
+  for(let i=0;i<MOCK_SUBS.length;i++){
+    const s = MOCK_SUBS[i];
+    log(logBox,`<span class="t">[${s.ts}]</span> ${s.text}\n`);
+    const div = document.createElement('div');
+    div.className='sub';
+    div.innerHTML = `<span class="ts">${s.ts}</span><span class="txt">${s.text}</span><span class="badge">${i+1}</span>`;
+    subs.appendChild(div);
+    cnt.textContent = i+1;
+    subs.scrollTop = subs.scrollHeight;
+    await wait(180);
+  }
+  log(logBox,'<span class="ok">[done]</span> ASR 完成\n');
+  await wait(600);
+  setProgress(28);
+}
+
+async function runPolish(){
+  setStepper(3,'active');
+  stage.innerHTML = `
+    <h2>${STAGE_TITLES.polish}</h2>
+    <div class="sub">AI 自动检测语气词/重复，标记修剪建议</div>
+    <div class="panel">
+      <h3>字幕（<span class="tag cut">红=修剪</span> <span class="tag ok">绿=保留</span>）</h3>
+      <div class="subs" id="subs"></div>
+    </div>
+    <div style="margin-top:14px;font-size:12.5px;color:var(--muted)">
+      <span class="tag brand">AI 判定</span>
+      检测到 3 句语气词短句（"嗯/啊/即係"）建议修剪，可人工调整后进入剪辑阶段。
+    </div>
+  `;
+  const subs = $('#subs');
+  for(let i=0;i<AI_DECISIONS.length;i++){
+    const s = AI_DECISIONS[i];
+    const div = document.createElement('div');
+    div.className = 'sub ' + (s.kept?'kept':'cut');
+    div.innerHTML = `
+      <span class="ts">${s.ts}</span>
+      <span class="txt">${s.text} <span style="color:var(--muted);font-size:11px">— ${s.reason}</span></span>
+      <span class="badge" style="background:${s.kept?'var(--ok-l)':'var(--cut-l)'};color:${s.kept?'var(--ok)':'var(--cut)'}">${s.kept?'留':'剪'}</span>
+    `;
+    subs.appendChild(div);
+    await wait(120);
+  }
+  await wait(500);
+  setProgress(42);
+}
+
+async function runCut(){
+  setStepper(4,'active');
+  stage.innerHTML = `
+    <h2>${STAGE_TITLES.cut}</h2>
+    <div class="sub">依据审核版字幕自动生成剪辑方案</div>
+    <div class="row">
+      <div class="panel">
+        <h3>剪辑方案</h3>
+        <div id="cutPlan" style="font-size:13px"></div>
+      </div>
+      <div class="panel">
+        <h3>时间线</h3>
+        <div class="timeline" id="tl"></div>
+      </div>
+    </div>
+  `;
+  const cp = $('#cutPlan');
+  cp.innerHTML = `<div style="color:var(--muted);font-size:12px;margin-bottom:8px">共 ${CUT_PLAN.segments.length} 段，时长 ${CUT_PLAN.totalLen.toFixed(1)}s（原始 ${MOCK_VIDEO.duration}s，节省 ${(MOCK_VIDEO.duration-CUT_PLAN.totalLen).toFixed(1)}s）</div>`;
+  for(let i=0;i<CUT_PLAN.segments.length;i++){
+    const seg = CUT_PLAN.segments[i];
+    const div = document.createElement('div');
+    div.style.cssText='padding:8px 10px;border:1px solid var(--line);border-radius:7px;margin-bottom:6px;background:#fff;display:flex;justify-content:space-between;align-items:center';
+    div.innerHTML = `<span><strong style="color:var(--brand-d)">${(seg.in).toFixed(1)}s → ${(seg.out).toFixed(1)}s</strong> · ${seg.label}</span><span class="tag brand">${(seg.out-seg.in).toFixed(1)}s</span>`;
+    cp.appendChild(div);
+    await wait(180);
+  }
+  const tl = $('#tl');
+  const tracks = [
+    {name:'V1', color:'v1'},
+    {name:'V2', color:'v2'},
+    {name:'V3', color:'v3'}
+  ];
+  /* 渲染时间线 */
+  for(const tr of tracks){
+    const row = document.createElement('div');
+    row.className='tl-row';
+    row.innerHTML = `<div class="lbl">${tr.name}</div>`;
+    CUT_PLAN.segments.forEach((seg,i)=>{
+      const segEl = document.createElement('div');
+      segEl.className = 'tl-seg ' + tr.color;
+      const ratio = (seg.out-seg.in)/MOCK_VIDEO.duration;
+      segEl.style.flex = ratio;
+      segEl.title = `${seg.label} (${seg.in.toFixed(1)}-${seg.out.toFixed(1)}s)`;
+      row.appendChild(segEl);
+    });
+    tl.appendChild(row);
+    await wait(120);
+  }
+  await wait(500);
+  setProgress(57);
+}
+
+async function runImage(){
+  setStepper(5,'active');
+  stage.innerHTML = `
+    <h2>${STAGE_TITLES.image}</h2>
+    <div class="sub">自动在指定时间点插入插图（共 ${IMAGES_PLAN.length} 张）</div>
+    <div class="panel">
+      <h3>插入方案</h3>
+      <div id="imgPlan" style="font-size:13px"></div>
+    </div>
+  `;
+  const ip = $('#imgPlan');
+  for(let i=0;i<IMAGES_PLAN.length;i++){
+    const it = IMAGES_PLAN[i];
+    const div = document.createElement('div');
+    div.style.cssText='display:flex;align-items:center;gap:12px;padding:10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:#fff';
+    div.innerHTML = `
+      <img src="media/${it.img}" style="width:60px;height:80px;object-fit:cover;border-radius:4px" onerror="this.style.background='#ddd';this.removeAttribute('src')">
+      <div style="flex:1">
+        <div><strong>${it.label}</strong></div>
+        <div style="color:var(--muted);font-size:11.5px;font-family:ui-monospace,monospace">${it.at.toFixed(1)}s · 持续 ${it.dur.toFixed(1)}s</div>
+      </div>
+      <span class="tag ok">✓ 已贴</span>
+    `;
+    ip.appendChild(div);
+    await wait(280);
+  }
+  await wait(500);
+  setProgress(71);
+}
+
+async function runClip(){
+  setStepper(6,'active');
+  stage.innerHTML = `
+    <h2>${STAGE_TITLES.clip}</h2>
+    <div class="sub">在指定时间点插入 B-roll 视频片段（共 ${CLIPS_PLAN.length} 段）</div>
+    <div class="panel">
+      <h3>插入方案</h3>
+      <div id="clipPlan" style="font-size:13px"></div>
+    </div>
+  `;
+  const cp = $('#clipPlan');
+  for(let i=0;i<CLIPS_PLAN.length;i++){
+    const it = CLIPS_PLAN[i];
+    const div = document.createElement('div');
+    div.style.cssText='display:flex;align-items:center;gap:12px;padding:10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:#fff';
+    div.innerHTML = `
+      <div style="width:60px;height:80px;background:linear-gradient(135deg,#3f7fae,#9b6dc7);border-radius:4px;display:grid;place-items:center;color:#fff;font-size:11px">▶</div>
+      <div style="flex:1">
+        <div><strong>${it.label}</strong></div>
+        <div style="color:var(--muted);font-size:11.5px;font-family:ui-monospace,monospace">${it.at.toFixed(1)}s · 持续 ${it.dur.toFixed(1)}s · 来源 ${it.src}</div>
+      </div>
+      <span class="tag ok">✓ 已加</span>
+    `;
+    cp.appendChild(div);
+    await wait(280);
+  }
+  await wait(500);
+  setProgress(85);
+}
+
+async function runDone(){
+  setStepper(7,'active');
+  stage.innerHTML = `
+    <h2>${STAGE_TITLES.done} <span class="tag ok" style="margin-left:6px">✓ 全部完成</span></h2>
+    <div class="sub">成品视频已渲染，可下载或继续编辑</div>
+    <div class="row">
+      <div class="panel">
+        <h3>成品预览</h3>
+        <div class="video-box">
+          <canvas id="cv" width="360" height="640"></canvas>
+          <div class="overlay" id="cvOverlay">点击播放演示</div>
+        </div>
+        <div style="margin-top:10px;text-align:center">
+          <button class="btn p" id="playBtn">▶ 播放</button>
+          <button class="btn" id="pauseBtn">⏸ 暂停</button>
+          <button class="btn" id="dlBtn">⤓ 下载</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>成片数据</h3>
+        <div class="donedeck">
+          <div class="stat"><div class="k">原始时长</div><div class="v">${MOCK_VIDEO.duration}s</div></div>
+          <div class="stat"><div class="k">成片时长</div><div class="v">${CUT_PLAN.totalLen.toFixed(1)}s <small>↓ 18%</small></div></div>
+          <div class="stat"><div class="k">字幕总数</div><div class="v">${MOCK_SUBS.length} 句</div></div>
+          <div class="stat"><div class="k">修剪片段</div><div class="v">${MOCK_SUBS.length - AI_KEEP.filter(Boolean).length} 段</div></div>
+          <div class="stat"><div class="k">贴图数量</div><div class="v">${IMAGES_PLAN.length} 张</div></div>
+          <div class="stat"><div class="k">插入视频</div><div class="v">${CLIPS_PLAN.length} 段</div></div>
+          <div class="stat"><div class="k">音画同步</div><div class="v" style="color:var(--ok)">100%</div></div>
+          <div class="stat"><div class="k">文件大小</div><div class="v">8.2 MB <small>↓ 34%</small></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:18px">
+      <h3>导出时间线</h3>
+      <div class="timeline" id="finalTL"></div>
+    </div>
+  `;
+  setProgress(100);
+
+  /* Canvas 渲染演示视频帧 */
+  const cv = $('#cv');
+  const ctx = cv.getContext('2d');
+  const overlay = $('#cvOverlay');
+  const imgCache = {};
+  /* 预加载图片 */
+  const allImgs = ['m_broll1.jpg','m_broll2.jpg','m_cartoon.jpg'];
+  for(const src of allImgs){
+    const img = new Image();
+    img.src = 'media/'+src;
+    imgCache[src] = img;
+  }
+  /* 构造完整时间线（cutter + images + clips） */
+  const fullTL = [];
+  CUT_PLAN.segments.forEach((s,i)=>{
+    fullTL.push({type:'video', start:s.in, end:s.out, idx:i});
+  });
+  IMAGES_PLAN.forEach(it=>{
+    fullTL.push({type:'image', start:it.at, end:it.at+it.dur, src:'media/'+it.img});
+  });
+
+  let playing = false;
+  let t0 = 0;
+  let playStart = 0;
+
+  function renderFrame(t){
+    /* 背景渐变 */
+    const g = ctx.createLinearGradient(0,0,0,cv.height);
+    g.addColorStop(0,'#1a2a3a');
+    g.addColorStop(1,'#0a1525');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,cv.width,cv.height);
+    /* 找当前时间段（用 cumulative 时间，不是原始时间） */
+    const cumTL = [];
+    let cum = 0;
+    CUT_PLAN.segments.forEach((s,i)=>{
+      const len = s.out-s.in;
+      cumTL.push({start:cum, end:cum+len, type:'video', seg:s, idx:i});
+      cum += len;
+    });
+    IMAGES_PLAN.forEach(it=>{
+      const pos = CUT_PLAN.segments.reduce((acc,s)=>acc + (s.in<=it.at && it.at<s.out ? (it.at-s.in) : 0), 0);
+      /* 简化：贴图直接叠加在某段上 */
+    });
+    let curSeg = cumTL.find(s=>t>=s.start && t<s.end) || cumTL[cumTL.length-1];
+    /* 计算段内进度 */
+    const localT = t - curSeg.start;
+    const segDur = curSeg.end - curSeg.start;
+    const progress = localT / segDur;
+    /* 视频层：用渐变模拟 */
+    const vGrad = ctx.createLinearGradient(0,0,cv.width,cv.height);
+    const h = (curSeg.idx * 47) % 360;
+    vGrad.addColorStop(0,`hsl(${h},55%,35%)`);
+    vGrad.addColorStop(1,`hsl(${(h+60)%360},65%,18%)`);
+    ctx.fillStyle = vGrad;
+    ctx.fillRect(0,0,cv.width,cv.height);
+    /* 模拟画面元素（按段不同） */
+    ctx.fillStyle='rgba(255,255,255,.08)';
+    if(curSeg.idx===0){
+      /* 开场：圆形装饰 */
+      ctx.beginPath();
+      ctx.arc(cv.width/2, cv.height*0.4, 80+progress*20, 0, Math.PI*2);
+      ctx.fill();
+    } else if(curSeg.idx===1){
+      /* 矩形网格 */
+      for(let i=0;i<5;i++){
+        ctx.fillRect(40+i*55, 200+progress*100, 40, 60);
+      }
+    } else if(curSeg.idx===2){
+      /* 三角 */
+      ctx.beginPath();
+      ctx.moveTo(cv.width/2, 250);
+      ctx.lineTo(cv.width/2-60, 380);
+      ctx.lineTo(cv.width/2+60, 380);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      /* 通用线条 */
+      ctx.fillRect(40, 300+progress*40, cv.width-80, 4);
+      ctx.fillRect(40, 320+progress*40, cv.width-80, 4);
+    }
+    /* 字幕 */
+    ctx.fillStyle='rgba(0,0,0,.55)';
+    ctx.fillRect(0, cv.height-140, cv.width, 90);
+    ctx.fillStyle='#fff';
+    ctx.font='bold 22px -apple-system,"PingFang SC","Microsoft YaHei"';
+    ctx.textAlign='center';
+    const subText = MOCK_SUBS[Math.min(curSeg.idx*2, MOCK_SUBS.length-1)]?.text || '';
+    /* 简易换行 */
+    const lines = wrapText(ctx, subText, cv.width-40, 2);
+    let y = cv.height - 110;
+    for(const ln of lines){
+      ctx.fillText(ln, cv.width/2, y);
+      y += 28;
+    }
+    /* 顶部时间码 */
+    ctx.fillStyle='rgba(255,255,255,.7)';
+    ctx.font='12px ui-monospace,monospace';
+    ctx.textAlign='left';
+    ctx.fillText(`⏱ ${t.toFixed(1)}s / ${CUT_PLAN.totalLen.toFixed(1)}s`, 12, 22);
+    /* 进度条 */
+    ctx.fillStyle='rgba(255,255,255,.2)';
+    ctx.fillRect(0, cv.height-4, cv.width, 4);
+    ctx.fillStyle='#3f7fae';
+    ctx.fillRect(0, cv.height-4, cv.width * (t/CUT_PLAN.totalLen), 4);
+  }
+
+  function wrapText(ctx, text, maxW, maxLines){
+    /* 简单按字符拆 */
+    const lines = [];
+    let cur = '';
+    for(const ch of text){
+      const test = cur + ch;
+      if(ctx.measureText(test).width > maxW && cur){
+        lines.push(cur);
+        cur = ch;
+        if(lines.length>=maxLines) break;
+      } else {
+        cur = test;
+      }
+    }
+    if(cur && lines.length<maxLines) lines.push(cur);
+    return lines;
+  }
+
+  function loop(now){
+    if(!playing) return;
+    const t = (now - playStart)/1000;
+    if(t >= CUT_PLAN.totalLen){
+      renderFrame(CUT_PLAN.totalLen);
+      playing = false;
+      overlay.style.display='flex';
+      overlay.textContent='播放完毕 · 点击重播';
+      $('#playBtn').textContent='↻ 重播';
+      return;
+    }
+    renderFrame(t);
+    requestAnimationFrame(loop);
+  }
+
+  $('#playBtn').onclick = ()=>{
+    if($('#playBtn').textContent==='↻ 重播'){
+      playStart = performance.now();
+    } else {
+      playStart = performance.now();
+    }
+    playing = true;
+    overlay.style.display='none';
+    requestAnimationFrame(loop);
+  };
+  $('#pauseBtn').onclick = ()=>{
+    playing = false;
+    overlay.style.display='flex';
+    overlay.textContent='已暂停';
+  };
+  $('#dlBtn').onclick = ()=>{
+    overlay.style.display='flex';
+    overlay.innerHTML='📦 导出任务已提交<br><small style="opacity:.7">（演示页面不实际下载）</small>';
+    setTimeout(()=>{overlay.style.display='none';},1500);
+  };
+  /* 默认渲染第 0 帧 */
+  renderFrame(0);
+
+  /* 渲染最终时间线 */
+  const finalTL = $('#finalTL');
+  ['V1 主视频','V2 字幕','V3 贴图'].forEach((name,i)=>{
+    const row = document.createElement('div');
+    row.className='tl-row';
+    row.innerHTML = `<div class="lbl">${name.split(' ')[0]}</div>`;
+    if(i===0){
+      CUT_PLAN.segments.forEach(seg=>{
+        const segEl = document.createElement('div');
+        segEl.className='tl-seg v1';
+        segEl.style.flex = (seg.out-seg.in)/MOCK_VIDEO.duration;
+        row.appendChild(segEl);
+      });
+    } else if(i===1){
+      MOCK_SUBS.forEach(s=>{
+        const segEl = document.createElement('div');
+        segEl.className='tl-seg v2';
+        segEl.style.flex = 0.05;
+        segEl.title = s.text;
+        row.appendChild(segEl);
+      });
+    } else {
+      IMAGES_PLAN.forEach(it=>{
+        const segEl = document.createElement('div');
+        segEl.className='tl-seg broll';
+        segEl.style.flex = it.dur/CUT_PLAN.totalLen;
+        segEl.title = it.label;
+        row.appendChild(segEl);
+      });
+    }
+    finalTL.appendChild(row);
+  });
+}
+
+/* ============================================================
+   工具 & 主循环
+   ============================================================ */
+function wait(ms){return new Promise(r=>setTimeout(r,ms))}
+
+async function runDemo(){
+  try{
+    await runUpload();
+    await runASR();
+    await runPolish();
+    await runCut();
+    await runImage();
+    await runClip();
+    await runDone();
+    /* 全部完成后 stepper 标记完成 */
+    stepper.querySelectorAll('.sp').forEach(s=>{
+      s.classList.remove('active');
+      s.classList.add('done');
+    });
+  }catch(e){
+    stage.innerHTML = `<h2>出错</h2><div class="sub">${e.message}</div>`;
+  }
+}
+
+function replay(){
+  clearTimeout(demoTimer);
+  /* 重置 stepper */
+  stepper.querySelectorAll('.sp').forEach(s=>{
+    s.classList.remove('active','done');
+  });
+  setProgress(0);
+  curStage = 0;
+  runDemo();
+}
+
+/* 页面加载即启动 */
+window.addEventListener('DOMContentLoaded', ()=>{
+  /* 略微延迟，让用户看清 hero */
+  setTimeout(runDemo, 600);
+});
+</script>
+</body>
+</html>
