@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f5f8a">
+<title>🎬 分阶段剪辑工作台 · ui0919</title>
+<!--
+  ui0919.html — 分阶段剪辑工作台（全新界面，2026-09-19）
+  设计原则（来自需求讨论 2026-09-19 截图）：
+  1. 一次只做一件事：每个环节一个单独界面，问题一个一个小问题地解决
+  2. 输入/输出固定：输入 = 原始影片（+ 时间点插图/插视频），输出 = 成品视频
+  3. 能自动化的尽量自动化：ASR → AI 修剪 → 人工审核 → 自动生成剪辑方案
+  4. 剪辑-预览循环：不满意就回到剪辑环节继续，直到做好为止
+  阶段流程：上传 → 字幕提取 → AI修剪+人工审核（文字最终版）→ 按文字版剪辑（预览循环）→ 贴图片 → 插视频 → 完成
+-->
+<style>
+:root{
+  --brand:#3f7fae; --brand-d:#2f5f8a; --brand-l:#eaf2f8;
+  --ok:#2e8b57; --ok-l:#e8f5ee; --warn:#c77700; --warn-l:#fdf3e3;
+  --cut:#c0392b; --cut-l:#fdeeec;
+  --line:#dfe6ec; --muted:#6b7a89; --ink:#22303c; --bg:#f4f7fa;
+  --radius:14px; --shadow:0 6px 20px rgba(47,95,138,.10);
+}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.65 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg)}
+.wrap{max-width:960px;margin:0 auto;padding:18px 16px 80px}
+.hero{background:linear-gradient(120deg,#3f7fae,#2f5f8a);color:#fff;border-radius:var(--radius);padding:22px 26px;box-shadow:0 8px 24px rgba(47,95,138,.25)}
+.hero h1{margin:0;font-size:22px}
+.hero p{margin:8px 0 0;font-size:13.5px;opacity:.95}
+
+/* ---------- 阶段导航 ---------- */
+.steps{display:flex;gap:6px;margin:16px 0 18px;flex-wrap:wrap}
+.step{flex:1;min-width:96px;background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:8px 6px;text-align:center;cursor:pointer;transition:.15s}
+.step .n{display:inline-block;width:22px;height:22px;line-height:22px;border-radius:50%;background:var(--line);color:var(--muted);font-size:12px;font-weight:700}
+.step .t{display:block;font-size:12.5px;margin-top:3px;color:var(--muted)}
+.step.on{border-color:var(--brand);background:var(--brand-l);box-shadow:var(--shadow)}
+.step.on .n{background:var(--brand);color:#fff}
+.step.on .t{color:var(--brand-d);font-weight:600}
+.step.done .n{background:var(--ok);color:#fff}
+.step.done .t{color:var(--ok)}
+.step.lock{opacity:.45;cursor:not-allowed}
+
+/* ---------- 通用 ---------- */
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px;box-shadow:var(--shadow)}
+.card h2{margin:0 0 4px;font-size:18px;color:var(--brand-d)}
+.card .sub{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+.btn{display:inline-block;border:none;border-radius:10px;padding:10px 20px;font-size:14.5px;font-weight:600;cursor:pointer;transition:.15s;background:var(--brand);color:#fff}
+.btn:hover{background:var(--brand-d)}
+.btn.ghost{background:#fff;color:var(--brand-d);border:1.5px solid var(--brand)}
+.btn.ghost:hover{background:var(--brand-l)}
+.btn.big{font-size:16.5px;padding:14px 34px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.ok{background:var(--ok)} .btn.ok:hover{background:#25704a}
+.btn.cut{background:var(--cut)} .btn.cut:hover{background:#9c2e21}
+.nav{display:flex;justify-content:space-between;margin-top:18px;gap:10px}
+.pill{display:inline-block;border-radius:20px;padding:3px 12px;font-size:12.5px;font-weight:600}
+.pill.keep{background:var(--ok-l);color:var(--ok)} .pill.cut{background:var(--cut-l);color:var(--cut)}
+.pill.ai{background:var(--brand-l);color:var(--brand-d)} .pill.warn{background:var(--warn-l);color:var(--warn)}
+input[type=number],input[type=text],select{border:1.5px solid var(--line);border-radius:8px;padding:7px 10px;font-size:14px;color:var(--ink);background:#fff}
+input:focus,select:focus{outline:none;border-color:var(--brand)}
+.hint{font-size:12.5px;color:var(--muted);margin-top:6px}
+.hr{border:none;border-top:1px dashed var(--line);margin:16px 0}
+
+/* ---------- 阶段1 上传 ---------- */
+.drop{border:2.5px dashed var(--brand);border-radius:var(--radius);background:var(--brand-l);padding:52px 20px;text-align:center;cursor:pointer;transition:.15s}
+.drop:hover,.drop.over{background:#dcebf5}
+.drop .ico{font-size:44px}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px}
+.meta div{background:var(--bg);border-radius:10px;padding:10px 12px;font-size:13px}
+.meta b{display:block;font-size:15px;color:var(--brand-d)}
+video.prev{width:100%;max-height:340px;border-radius:10px;background:#000;margin-top:12px}
+
+/* ---------- 字幕表 ---------- */
+.subtable{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
+.subtable th{background:var(--bg);text-align:left;padding:8px 10px;font-size:12.5px;color:var(--muted);position:sticky;top:0}
+.subtable td{border-top:1px solid var(--line);padding:8px 10px;vertical-align:top}
+.subtable tr.rowcut td{background:var(--cut-l)}
+.subtable tr.rowtrim td{background:var(--warn-l)}
+.tc{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;white-space:nowrap;color:var(--muted)}
+.subtable input[type=text]{width:100%;padding:5px 8px;font-size:13.5px}
+.subtable select{font-size:12.5px;padding:4px 6px}
+.switch{position:relative;width:38px;height:21px;display:inline-block}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:#c8d4dd;border-radius:20px;cursor:pointer;transition:.15s}
+.slider:before{content:"";position:absolute;width:15px;height:15px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.15s}
+.switch input:checked+.slider{background:var(--ok)}
+.switch input:checked+.slider:before{transform:translateX(17px)}
+.summary{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.summary .pill{font-size:13px;padding:6px 14px}
+
+/* ---------- 剪辑方案 ---------- */
+.cutrow{display:flex;gap:8px;align-items:center;background:var(--cut-l);border:1px solid #f3cdc8;border-radius:10px;padding:8px 12px;margin:7px 0;font-size:13.5px}
+.cutrow button{margin-left:auto}
+.timeline{position:relative;height:34px;background:var(--bg);border-radius:8px;margin:14px 0 4px;overflow:hidden;border:1px solid var(--line)}
+.timeline .keepseg{position:absolute;top:0;bottom:0;background:linear-gradient(180deg,#9ec6e2,#6fa8cf)}
+.timeline .cutseg{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(45deg,#e7a49d,#e7a49d 6px,#df8d84 6px,#df8d84 12px)}
+.timeline .play{position:absolute;top:0;bottom:0;width:2.5px;background:var(--cut);z-index:2}
+.addcut{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.grid9{display:grid;grid-template-columns:repeat(3,44px);gap:4px;margin:8px 0}
+.grid9 button{width:44px;height:34px;border:1.5px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;font-size:15px}
+.grid9 button.on{background:var(--brand);color:#fff;border-color:var(--brand-d)}
+.empty{color:var(--muted);text-align:center;padding:26px;font-size:14px;background:var(--bg);border-radius:10px}
+.footer-note{margin-top:26px;text-align:center;color:var(--muted);font-size:12px}
+
+/* ================= 移动端适配 (手机优先优化) ================= */
+@media (max-width: 700px){
+  body{font-size:14.5px;-webkit-text-size-adjust:100%}
+  .wrap{padding:12px 12px 110px}               /* 底部留出固定导航高度 */
+  .hero{padding:16px 18px;border-radius:12px}
+  .hero h1{font-size:19px}
+  .hero p{font-size:12.5px;line-height:1.6}
+
+  /* 步骤条 → 横向滑动 chips（一屏不再挤成一团） */
+  .steps{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    margin:12px 0 14px;padding-bottom:4px;gap:6px;scrollbar-width:none}
+  .steps::-webkit-scrollbar{display:none}
+  .step{flex:0 0 auto;min-width:76px;padding:7px 8px;border-radius:10px}
+  .step .n{width:20px;height:20px;line-height:20px;font-size:11px}
+  .step .t{font-size:11.5px;margin-top:2px;white-space:nowrap}
+
+  .card{padding:16px 15px;border-radius:12px}
+  .card h2{font-size:16.5px}
+  .card .sub{font-size:12.5px}
+
+  /* 触控目标全部 ≥44px（拇指友好） */
+  .btn{min-height:44px;padding:11px 18px;font-size:14.5px;border-radius:11px}
+  .btn.big{width:100%;font-size:16px;padding:14px 20px}
+  .btn.ghost{min-height:44px}
+  input[type=number],input[type=text],select{min-height:44px;font-size:16px}  /* 16px 防 iOS 聚焦缩放 */
+  .switch{width:46px;height:26px}
+  .slider:before{width:20px;height:20px}
+  .switch input:checked+.slider:before{transform:translateX(20px)}
+
+  /* 表格：容器横向滚动，表格本身保持可读宽度 */
+  .subtable{min-width:640px;font-size:13.5px}
+  .subtable th{font-size:11.5px;padding:7px 8px}
+  .subtable td{padding:8px}
+  .tc{font-size:11px}
+
+  /* 底部导航固定到屏幕底部，拇指直达 */
+  .nav{position:fixed;left:0;right:0;bottom:0;z-index:50;
+    background:#fff;border-top:1px solid var(--line);
+    padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));
+    margin:0;box-shadow:0 -4px 18px rgba(31,45,61,.08)}
+  .nav .btn{flex:1;min-width:0}
+
+  .grid9{grid-template-columns:repeat(3,54px)}
+  .grid9 button{width:54px;height:46px;font-size:17px}
+  video.prev{max-height:260px}
+  .meta{gap:8px}
+  .meta div{padding:9px 10px;font-size:12px}
+  .meta b{font-size:14px}
+  .drop{padding:38px 14px}
+  .drop .ico{font-size:38px}
+  .cutrow{flex-wrap:wrap;font-size:13px;padding:10px 12px}
+  .addcut{gap:6px}
+  .addcut input[type=number]{width:74px !important}
+  .summary{gap:6px}
+  .summary .pill{font-size:12px;padding:5px 11px}
+  .footer-note{margin:14px 0 4px;font-size:11px}
+  pre{font-size:11px !important}
+}
+/* 超窄屏（iPhone SE 一类） */
+@media (max-width: 380px){
+  .step{min-width:70px}
+  .hero h1{font-size:17.5px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hero">
+    <h1>🎬 分阶段剪辑工作台</h1>
+    <p>输入 = 原始影片（＋插图／插视频素材）&nbsp;·&nbsp;输出 = 成品视频&nbsp;·&nbsp;每个阶段只做一件事，一屏一事，逐步推进</p>
+  </div>
+
+  <div class="steps" id="steps"></div>
+  <div class="card" id="stage"></div>
+
+  <div class="nav">
+    <button class="btn ghost" id="prevBtn">← 上一步</button>
+    <button class="btn" id="nextBtn">下一步 →</button>
+  </div>
+  <div class="footer-note">会话自动保存在本浏览器（localStorage）· 渲染 / ASR / AI 修剪的後端接口已预留钩子</div>
+</div>
+
+<script>
+/* ================= 会话状态 ================= */
+const DEFAULT_S = {
+  stage: 0,
+  video: null,            // {name,size,duration,w,h,url}
+  subs: [],               // {id,start,end,text,ai:'keep'|'trim'|'cut',final:'',keep:true}
+  extracted: false,       // 阶段2完成?
+  finalLocked: false,     // 阶段3文字最终版已确认?
+  cuts: [],               // [{start,end,note}]
+  rendered: null,         // 渲染结果 url（钩子）
+  images: [],             // [{t,url,pos,ms,name}]
+  clips: []               // [{t,url,mode:'full'|'pip',ms,name}]
+};
+let S = Object.assign({}, DEFAULT_S, JSON.parse(localStorage.getItem('ui0919_session')||'{}'));
+S.video && (S.video.url = null); // blob URL 不能跨刷新，需重传视频
+const save = ()=>localStorage.setItem('ui0919_session', JSON.stringify(S));
+
+const STAGES = [
+  {t:'上传影片',  icon:'📁'},
+  {t:'字幕提取',  icon:'🗣️'},
+  {t:'AI修剪+审核',icon:'✍️'},
+  {t:'按文字版剪辑',icon:'✂️'},
+  {t:'贴图片',    icon:'🖼️'},
+  {t:'插视频',    icon:'🎞️'},
+  {t:'完成',      icon:'🚀'},
+];
+const UNLOCKED = [true, !!S.video, S.extracted, S.finalLocked, S.rendered!==null||S.cuts.length>0, S.images.length>0||true, S.images.length>0||S.clips.length>0];
+
+/* ================= 骨架 ================= */
+function renderSteps(){
+  document.getElementById('steps').innerHTML = STAGES.map((s,i)=>{
+    let cls='step'+(i===S.stage?' on':'');
+    if(i<S.stage && stageDone(i)) cls+=' done';
+    if(i>S.stage && !UNLOCKED[i]) cls+=' lock';
+    return `<div class="${cls}" onclick="${i<=S.stage||UNLOCKED[i]?`go(${i})`:''}"><span class="n">${stageDone(i)&&i!==S.stage?'✓':i+1}</span><span class="t">${s.icon} ${s.t}</span></div>`;
+  }).join('');
+}
+function stageDone(i){
+  switch(i){case 0:return !!S.video; case 1:return S.extracted; case 2:return S.finalLocked;
+    case 3:return S.cuts.length>0; case 4:return true; case 5:return true; default:return true;}
+}
+function go(i){ S.stage=Math.max(0,Math.min(6,i)); save(); render(); }
+function fmt(s){ s=Math.max(0,s); const m=Math.floor(s/60), sec=(s%60).toFixed(1); return `${String(m).padStart(2,'0')}:${String(sec).padStart(4,'0')}`; }
+
+function render(){
+  renderSteps();
+  const el=document.getElementById('stage');
+  [renderStage1,renderStage2,renderStage3,renderStage4,renderStage5,renderStage6,renderStage7][S.stage](el);
+  const nb=document.getElementById('nextBtn'), pb=document.getElementById('prevBtn');
+  pb.disabled = S.stage===0;
+  pb.onclick = ()=>go(S.stage-1);
+  nb.style.display = S.stage===6 ? 'none':'';
+  nb.disabled = !stageDone(S.stage);
+  nb.onclick = ()=>{ if(stageDone(S.stage)) go(S.stage+1); };
+  nb.textContent = S.stage===4||S.stage===5 ? (stageDone(S.stage)?'下一阶段 →':'完成本阶段后继续 →') : '下一步 →';
+}
+
+/* ================= 阶段1 上传 ================= */
+function renderStage1(el){
+  el.innerHTML=`
+    <h2>① 上传原始影片</h2>
+    <p class="sub">整个流程的输入。上传后自动读取时长和分辨率。</p>
+    <div class="drop" id="drop">
+      <div class="ico">📁</div>
+      <div style="font-size:16px;font-weight:600;margin-top:6px">点击选择 或 拖拽影片到这里</div>
+      <div class="hint">支持 mp4 / mov / webm —— 文件只在本地浏览器处理，不会上传到任何服务器</div>
+    </div>
+    <input type="file" id="file" accept="video/*" hidden>
+    <div id="meta"></div>`;
+  const drop=document.getElementById('drop'), file=document.getElementById('file');
+  drop.onclick=()=>file.click();
+  drop.ondragover=e=>{e.preventDefault();drop.classList.add('over')};
+  drop.ondragleave=()=>drop.classList.remove('over');
+  drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');if(e.dataTransfer.files[0])loadVideo(e.dataTransfer.files[0])};
+  file.onchange=()=>file.files[0]&&loadVideo(file.files[0]);
+  if(S.video) showMeta(el);
+}
+function loadVideo(f){
+  const url=URL.createObjectURL(f);
+  const v=document.createElement('video'); v.preload='metadata'; v.src=url;
+  v.onloadedmetadata=()=>{
+    S.video={name:f.name,size:f.size,duration:v.duration,w:v.videoWidth,h:v.videoHeight,url};
+    save(); render();
+  };
+}
+function showMeta(el){
+  const v=S.video, m=document.getElementById('meta');
+  m.innerHTML=`
+    <video class="prev" src="${v.url}" controls></video>
+    <div class="meta">
+      <div><b>${v.name}</b>文件名</div>
+      <div><b>${fmt(v.duration)}</b>时长</div>
+      <div><b>${v.w}×${v.h}</b>分辨率</div>
+      <div><b>${(v.size/1048576).toFixed(1)} MB</b>大小</div>
+    </div>
+    <div class="hint" style="margin-top:10px">✅ 就绪 —— 点右下角「下一步」进入字幕提取</div>`;
+  if(S.video) showMeta(el); // 补渲染预览
+}
+
+/* ================= 阶段2 字幕提取 ================= */
+function renderStage2(el){
+  el.innerHTML=`
+    <h2>② 提取字幕</h2>
+    <p class="sub">这个界面只做一件事：把影片里说的话变成带时间码的字幕稿。</p>
+    ${S.extracted?`
+      <div class="summary">
+        <span class="pill keep">✅ 提取完成：${S.subs.length} 条字幕</span>
+        <span class="pill ai">总语音时长约 ${fmt(S.subs.reduce((a,s)=>a+s.end-s.start,0))}</span>
+      </div>
+      <table class="subtable"><tr><th>#</th><th>时间码</th><th>内容</th></tr>
+      ${S.subs.slice(0,8).map(s=>`<tr><td>${s.id}</td><td class="tc">${fmt(s.start)}–${fmt(s.end)}</td><td>${s.text}</td></tr>`).join('')}
+      ${S.subs.length>8?`<tr><td colspan="3" class="hint">… 前 8 条预览，全部 ${S.subs.length} 条在下一阶段编辑</td></tr>`:''}</table>
+    `:`
+      <div style="text-align:center;padding:30px 0">
+        <button class="btn big" onclick="doExtract()">🗣️ 开始提取字幕</button>
+        <div class="hint" style="margin-top:12px">
+          后端钩子：ASR_JOB（Whisper / 部署版接口）—— 当前用示例数据演示流程<br>
+          或者 <a href="#" onclick="importSRT(event)">导入已有 SRT 文件</a>
+        </div>
+      </div>
+      <input type="file" id="srtfile" accept=".srt,.txt" hidden>`}
+  `;
+}
+function doExtract(){
+  // TODO(后端钩子): POST /api/asr  {video}  →  返回 [{start,end,text}]
+  // 演示数据：8 秒一条，模拟 8 条
+  S.subs = Array.from({length:8},(_,i)=>({
+    id:i+1, start:i*8, end:i*8+7.2,
+    text:['大家好，今天我们聊一下这个项目的整体思路','首先我们看一下需求背景，为什么要做这件事','然后是核心的设计理念，输入和输出是固定的','中间的过程拆成一环一环的小环节','每个环节只做一件事情，单独一个界面','字幕提取出来之后，让大模型先修剪一遍','修剪之后由人来审核，审核完就是文字最终版','最后根据这个文字版本去剪辑视频'][i],
+    ai:'keep', final:'', keep:true
+  }));
+  S.extracted=true; save(); render();
+}
+function importSRT(e){ e.preventDefault(); document.getElementById('srtfile').click();
+  document.getElementById('srtfile').onchange=function(){
+    const rd=new FileReader();
+    rd.onload=()=>{ parseSRT(rd.result); S.extracted=true; save(); render(); };
+    rd.readAsText(this.files[0]);
+  };
+}
+function parseSRT(txt){
+  const blocks=txt.replace(/\r/g,'').split('\n\n');
+  S.subs=blocks.map((b,i)=>{
+    const lines=b.split('\n').filter(Boolean); if(lines.length<2) return null;
+    const m=lines[1].match(/(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/);
+    if(!m) return null;
+    const t=a=>+a[0]*3600+ +a[1]*60+ +a[2]+ +(a[3]+'0').slice(0,1)/10;
+    return {id:i+1,start:t([m[1],m[2],m[3],m[4]]),end:t([m[5],m[6],m[7],m[8]]),text:lines.slice(2).join(' '),ai:'keep',final:'',keep:true};
+  }).filter(Boolean);
+}
+
+/* ================= 阶段3 AI修剪+人工审核 ================= */
+function renderStage3(el){
+  const keep=S.subs.filter(s=>s.keep).length, cut=S.subs.length-keep;
+  el.innerHTML=`
+    <h2>③ AI 修剪 → 人工审核 → 文字最终版</h2>
+    <p class="sub">AI 先把口语废字、重复、口头禅标记出来（<span class="pill cut">剪掉</span>/<span class="pill warn">修剪</span>），你逐条确认。确认后这一版就是整个流程的<strong>文字最终版</strong>，后面剪辑完全以它为准。</p>
+    <div style="margin-bottom:10px">
+      <button class="btn ghost" onclick="aiTrim()">🤖 ${S.subs.some(s=>s.ai!=='keep')?'重新运行 AI 修剪':'运行 AI 修剪'}</button>
+      <span class="hint" style="margin-left:8px">后端钩子：LLM_POLISH（任意 OpenAI 兼容接口，如 DeepSeek / Kimi / HKBU 网关）</span>
+    </div>
+    <div class="summary">
+      <span class="pill keep">保留 ${keep} 条</span>
+      <span class="pill cut">删掉 ${cut} 条</span>
+      <span class="pill ai">成片预计 ${fmt(S.subs.filter(s=>s.keep).reduce((a,s)=>a+s.end-s.start,0))}</span>
+    </div>
+    <div style="max-height:420px;overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px">
+    <table class="subtable">
+      <tr><th>#</th><th>时间码</th><th>AI 建议</th><th>最终文字（可直接改）</th><th>保留</th></tr>
+      ${S.subs.map(s=>`
+        <tr class="${s.ai==='cut'?'rowcut':s.ai==='trim'?'rowtrim':''}">
+          <td>${s.id}</td>
+          <td class="tc">${fmt(s.start)}–${fmt(s.end)}</td>
+          <td><select onchange="setAI(${s.id},this.value)">
+            <option value="keep" ${s.ai==='keep'?'selected':''}>保留</option>
+            <option value="trim" ${s.ai==='trim'?'selected':''}>修剪</option>
+            <option value="cut" ${s.ai==='cut'?'selected':''}>剪掉</option>
+          </select></td>
+          <td><input type="text" value="${(s.final||s.text).replace(/"/g,'&quot;')}" onchange="setFinal(${s.id},this.value)"></td>
+          <td><label class="switch"><input type="checkbox" ${s.keep?'checked':''} onchange="setKeep(${s.id},this.checked)"><span class="slider"></span></label></td>
+        </tr>`).join('')}
+    </table></div>
+    <div style="margin-top:14px">
+      <button class="btn ok" onclick="lockFinal()">✅ 确认为文字最终版（${keep} 条）</button>
+    </div>`;
+}
+function setAI(id,v){ const s=S.subs.find(x=>x.id===id); s.ai=v; s.keep=(v!=='cut'); save(); render(); }
+function setFinal(id,v){ S.subs.find(x=>x.id===id).final=v; save(); }
+function setKeep(id,v){ const s=S.subs.find(x=>x.id===id); s.keep=v; if(!v)s.ai='cut'; else if(s.ai==='cut')s.ai='keep'; save(); render(); }
+function aiTrim(){
+  // TODO(后端钩子): POST /api/polish {subs} → LLM 返回建议
+  // 前端演示规则：含"嗯/啊/就是说/对吧/这个这个"的句子 → trim；短于 1.5s 的 → cut
+  S.subs.forEach(s=>{
+    const t=s.text;
+    if(/嗯|啊|就是说|对吧|这个这个|然后然后/.test(t)) s.ai='trim', s.final=t.replace(/嗯|啊/g,'').replace(/就是说/,'');
+    else if(s.end-s.start<1.5) s.ai='cut', s.keep=false;
+    else s.ai='keep', s.final='';
+  });
+  save(); render();
+}
+function lockFinal(){ S.finalLocked=true; autoGenCuts(); save(); go(3); }
+
+/* ================= 阶段4 按文字版剪辑 ================= */
+function autoGenCuts(){
+  const durs=[]; let cursor=0;
+  S.subs.forEach(s=>{ if(!s.keep){ durs.push({start:cursor?cursor:s.start,end:s.end,note:`删：第${s.id}条「${(s.final||s.text).slice(0,12)}…」`});} cursor=s.end; });
+  // 合并相邻
+  const merged=[]; durs.forEach(c=>{
+    const last=merged[merged.length-1];
+    if(last && c.start<=last.end) last.end=c.end;
+    else merged.push({...c});
+  });
+  S.cuts=merged; save();
+}
+function totalCut(){ return S.cuts.reduce((a,c)=>a+(c.end-c.start),0); }
+function renderStage4(el){
+  if(!S.cuts.length) autoGenCuts();
+  const dur=S.video?S.video.duration:0, remain=Math.max(0,dur-totalCut());
+  el.innerHTML=`
+    <h2>④ 按文字最终版剪辑</h2>
+    <p class="sub">已根据审核结果自动生成剪辑方案（红色段 = 剪掉）。可以手动增删段落。渲染后有可预览版本 —— 不满意就回来继续调，循环到满意为止。</p>
+    <div class="summary">
+      <span class="pill ai">原始 ${fmt(dur)}</span>
+      <span class="pill cut">剪掉 ${fmt(totalCut())}（${S.cuts.length} 段）</span>
+      <span class="pill keep">成片约 ${fmt(remain)}</span>
+    </div>
+    <div class="timeline">${drawTimeline(dur)}</div>
+    <div class="hint">蓝 = 保留 &nbsp; 红 = 剪掉</div>
+    <div style="margin-top:12px">
+      ${S.cuts.map((c,i)=>`
+        <div class="cutrow">✂️ <b>${fmt(c.start)} → ${fmt(c.end)}</b>（${(c.end-c.start).toFixed(1)}s）<span class="hint" style="margin:0 8px">${c.note||''}</span>
+          <button class="btn ghost" style="padding:4px 12px;font-size:12.5px" onclick="editCut(${i})">改时间</button>
+          <button class="btn cut" style="padding:4px 12px;font-size:12.5px" onclick="delCut(${i})">撤销此段</button>
+        </div>`).join('')||'<div class="empty">没有要剪的段落 —— 也许文字审核后全保留了 🎉</div>'}
+    </div>
+    <div class="addcut">
+      <span class="hint">手动补一段：</span>
+      <input type="number" id="cs" placeholder="开始秒" style="width:90px"> →
+      <input type="number" id="ce" placeholder="结束秒" style="width:90px">
+      <button class="btn ghost" style="padding:6px 14px" onclick="addCut()">＋加剪辑段</button>
+    </div>
+    <hr class="hr">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn big" onclick="doRender()">▶ 应用剪辑 · 渲染预览版</button>
+      ${S.rendered?`<span class="pill keep">✅ 预览版已生成</span> <button class="btn ghost" onclick="alert('渲染钩子：此处提供预览播放与 MP4 下载')">预览 / 下载</button>`:''}
+      <span class="hint">后端钩子：RENDER_JOB（v3 引擎 compile_render + 11 道验证闸门）</span>
+    </div>
+    ${S.rendered?`<div class="hint" style="margin-top:8px">不满意？直接改上面的剪辑段，再点一次渲染 —— 循环到满意为止。</div>`:''}
+  `;
+}
+function drawTimeline(dur){
+  if(!dur) return '';
+  let h=''; const pct=v=>(v/dur*100).toFixed(2)+'%';
+  // 保留段 = 补集
+  let cursor=0; const keeps=[];
+  S.cuts.slice().sort((a,b)=>a.start-b.start).forEach(c=>{ if(c.start>cursor) keeps.push([cursor,c.start]); cursor=Math.max(cursor,c.end); });
+  if(cursor<dur) keeps.push([cursor,dur]);
+  h+=S.cuts.map(c=>`<div class="cutseg" style="left:${pct(c.start)};width:${pct(Math.max(0,c.end-c.start))}"></div>`).join('');
+  h+=keeps.map(k=>`<div class="keepseg" style="left:${pct(k[0])};width:${pct(k[1]-k[0])}"></div>`).join('');
+  return h;
+}
+function addCut(){ const a=+document.getElementById('cs').value,b=+document.getElementById('ce').value;
+  if(b>a){S.cuts.push({start:a,end:b,note:'手动添加'});S.cuts.sort((x,y)=>x.start-y.start);save();render();} }
+function delCut(i){ S.cuts.splice(i,1); save(); render(); }
+function editCut(i){ const c=S.cuts[i]; const v=prompt('格式：开始秒,结束秒',`${c.start},${c.end}`); if(!v)return;
+  const [a,b]=v.split(',').map(Number); if(b>a){c.start=a;c.end=b;save();render();} }
+function doRender(){
+  // TODO(后端钩子): POST /api/render {session, cuts} → job id → 轮询 → mp4 url
+  S.rendered='pending://'+Date.now(); save(); render();
+}
+
+/* ================= 阶段5 贴图片 ================= */
+function renderStage5(el){
+  el.innerHTML=`
+    <h2>⑤ 贴图片（插图环节 · 独立界面）</h2>
+    <p class="sub">只做一件事：在指定时间点贴上图片，选好位置和停留时长。</p>
+    <div class="addcut">
+      <span>时间点 <input type="number" id="it" placeholder="秒" style="width:80px"></span>
+      <button class="btn ghost" style="padding:7px 12px" onclick="document.getElementById('if').click()">选图片</button>
+      <input type="file" id="if" accept="image/*" hidden>
+      <span>显示 <input type="number" id="ims" value="3" style="width:70px"> 秒</span>
+    </div>
+    <div class="grid9" id="g9">${[0,1,2,3,4,5,6,7,8].map(i=>`<button data-p="${i}" class="${i===4?'on':''}" onclick="pickPos(this)">${i===4?'●':'·'}</button>`).join('')}</div>
+    <div class="hint">九宫格 = 图片在画面中的位置（默认正中）</div>
+    <div id="imglist">${S.images.length?S.images.map((im,i)=>`
+      <div class="cutrow" style="background:var(--brand-l);border-color:#cfe0ee">🖼️ <b>${fmt(im.t)}</b> ${im.name} · 位置${im.pos+1} · ${im.ms}s
+        <button class="btn cut" style="padding:4px 12px;font-size:12.5px" onclick="S.images.splice(${i},1);save();render()">删除</button>
+      </div>`).join(''):'<div class="empty">还没有插图 —— 选好时间点加一个吧</div>'}
+    </div>`;
+  let pos=4, pendingUrl=null, pendingName='';
+  window.pickPos=b=>{pos=+b.dataset.p;document.querySelectorAll('#g9 button').forEach(x=>x.classList.remove('on'));b.classList.add('on')};
+  document.getElementById('if').onchange=function(){
+    if(this.files[0]){ pendingUrl=URL.createObjectURL(this.files[0]); pendingName=this.files[0].name;
+      const t=+document.getElementById('it').value||0, ms=+document.getElementById('ims').value||3;
+      S.images.push({t,url:pendingUrl,pos,ms,name:pendingName}); save(); render(); }
+  };
+}
+
+/* ================= 阶段6 插视频 ================= */
+function renderStage6(el){
+  el.innerHTML=`
+    <h2>⑥ 插视频（插播环节 · 独立界面）</h2>
+    <p class="sub">只做一件事：在指定时间点插入另一段视频 —— 全屏插播或画中画（PIP）。</p>
+    <div class="addcut">
+      <span>时间点 <input type="number" id="vt" placeholder="秒" style="width:80px"></span>
+      <button class="btn ghost" style="padding:7px 12px" onclick="document.getElementById('vf').click()">选视频</button>
+      <input type="file" id="vf" accept="video/*" hidden>
+      <select id="vmode"><option value="full">全屏插播</option><option value="pip">画中画 PIP</option></select>
+      <span><input type="number" id="vms" value="5" style="width:70px"> 秒</span>
+    </div>
+    <div id="cliplist">${S.clips.length?S.clips.map((c,i)=>`
+      <div class="cutrow" style="background:var(--brand-l);border-color:#cfe0ee">🎞️ <b>${fmt(c.t)}</b> ${c.name} · ${c.mode==='full'?'全屏插播':'PIP'} · ${c.ms}s
+        <button class="btn cut" style="padding:4px 12px;font-size:12.5px" onclick="S.clips.splice(${i},1);save();render()">删除</button>
+      </div>`).join(''):'<div class="empty">还没有插播 —— 选好时间点加一个吧</div>'}
+    </div>`;
+  document.getElementById('vf').onchange=function(){
+    if(this.files[0]){ const t=+document.getElementById('vt').value||0;
+      S.clips.push({t,url:URL.createObjectURL(this.files[0]),mode:document.getElementById('vmode').value,ms:+document.getElementById('vms').value||5,name:this.files[0].name});
+      save(); render(); }
+  };
+}
+
+/* ================= 阶段7 完成 ================= */
+function renderStage7(el){
+  const doc={ video:{name:S.video?.name,duration:S.video?.duration},
+    subtitleFinal:S.subs.filter(s=>s.keep).map(s=>({id:s.id,start:s.start,end:s.end,text:s.final||s.text})),
+    cuts:S.cuts, images:S.images.map(i=>({t:i.t,pos:i.pos,ms:i.ms,name:i.name})),
+    clips:S.clips.map(c=>({t:c.t,mode:c.mode,ms:c.ms,name:c.name})) };
+  el.innerHTML=`
+    <h2>🚀 全部完成 —— 这就是输出</h2>
+    <p class="sub">整条流水线的产出汇总。导出的会话 JSON 就是「剪辑文档」—— 可存档、可复现、可继续编辑。</p>
+    <div class="summary">
+      <span class="pill keep">成片约 ${fmt(Math.max(0,(S.video?.duration||0)-totalCut()))}</span>
+      <span class="pill ai">文字稿 ${S.subs.filter(s=>s.keep).length} 条</span>
+      <span class="pill cut">剪辑 ${S.cuts.length} 段</span>
+      <span class="pill ai">插图 ${S.images.length} 张</span>
+      <span class="pill ai">插播 ${S.clips.length} 段</span>
+    </div>
+    <button class="btn big ok" onclick="exportDoc()">📦 导出会话 JSON（剪辑文档）</button>
+    <div class="hint" style="margin-top:10px">后端钩子：RENDER_JOB 最终渲染（v3 compile_render + 验证闸门）→ 成品 MP4 下载</div>
+    <hr class="hr">
+    <pre style="background:var(--bg);border-radius:10px;padding:14px;font-size:12px;overflow:auto;max-height:300px">${JSON.stringify(doc,null,1).replace(/</g,'&lt;')}</pre>`;
+}
+function exportDoc(){
+  const doc={ version:'ui0919', exportedAt:new Date().toISOString(),
+    video:{name:S.video?.name,duration:S.video?.duration},
+    subtitleFinal:S.subs.filter(s=>s.keep).map(s=>({id:s.id,start:s.start,end:s.end,text:s.final||s.text})),
+    cuts:S.cuts, images:S.images.map(i=>({t:i.t,pos:i.pos,ms:i.ms,name:i.name})),
+    clips:S.clips.map(c=>({t:c.t,mode:c.mode,ms:c.ms,name:c.name})) };
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(doc,null,2)],{type:'application/json'}));
+  a.download='edit_session_ui0919.json'; a.click();
+}
+
+/* ================= 启动 ================= */
+render();
+</script>
+</body>
+</html>
